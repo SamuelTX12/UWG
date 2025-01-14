@@ -2,161 +2,245 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-public class Node
+// Custom Priority Queue Implementation for Dijkstra's Algorithm (Weighted Graphs)
+public class PriorityQueue<T>
 {
-    public int Id { get; set; }
+    private List<(T item, int priority)> heap = new List<(T, int)>();
 
-    public Node(int id)
+    public int Count => heap.Count;
+
+    public void Enqueue(T item, int priority)
     {
-        Id = id;
-    }
-}
+        heap.Add((item, priority));
+        int currentIndex = heap.Count - 1;
 
-public class Graph
-{
-    private Dictionary<Node, List<(Node, int)>> adjacencyList = new();
-
-    public void AddNode(Node node)
-    {
-        adjacencyList[node] = new List<(Node, int)>();
-    }
-
-    public void AddEdge(Node from, Node to, int weight = 1)
-    {
-        adjacencyList[from].Add((to, weight));
-        adjacencyList[to].Add((from, weight)); // Assuming undirected graph
-    }
-
-    public List<Node> GetNodes() => adjacencyList.Keys.ToList();
-
-    public List<(Node, int)> GetNeighbors(Node node) => adjacencyList[node];
-}
-
-public class InfluenceCalculator
-{
-    // Unweighted Graph using BFS
-    public static double CalculateInfluenceScoreUnweighted(Graph graph, Node source)
-    {
-        double totalDistance = 0;
-        int nodeCount = graph.GetNodes().Count;
-
-        foreach (var node in graph.GetNodes())
+        while (currentIndex > 0)
         {
-            if (node != source)
-            {
-                int distance = BFS(graph, source, node);
-                totalDistance += distance;
-            }
+            int parentIndex = (currentIndex - 1) / 2;
+            if (heap[currentIndex].priority >= heap[parentIndex].priority)
+                break;
+
+            (heap[currentIndex], heap[parentIndex]) = (heap[parentIndex], heap[currentIndex]);
+            currentIndex = parentIndex;
+        }
+    }
+
+    public bool TryDequeue(out T item, out int priority)
+    {
+        if (heap.Count == 0)
+        {
+            item = default(T);
+            priority = default(int);
+            return false;
         }
 
-        return (nodeCount - 1) / totalDistance;
+        (item, priority) = heap[0];
+        var lastItem = heap[heap.Count - 1];
+        heap.RemoveAt(heap.Count - 1);
+
+        if (heap.Count > 0)
+        {
+            heap[0] = lastItem;
+            int currentIndex = 0;
+
+            while (true)
+            {
+                int leftChild = 2 * currentIndex + 1;
+                int rightChild = 2 * currentIndex + 2;
+                int smallest = currentIndex;
+
+                if (leftChild < heap.Count && heap[leftChild].priority < heap[smallest].priority)
+                    smallest = leftChild;
+                if (rightChild < heap.Count && heap[rightChild].priority < heap[smallest].priority)
+                    smallest = rightChild;
+
+                if (smallest == currentIndex)
+                    break;
+
+                (heap[currentIndex], heap[smallest]) = (heap[smallest], heap[currentIndex]);
+                currentIndex = smallest;
+            }
+        }
+        return true;
     }
+}
 
-    private static int BFS(Graph graph, Node start, Node target)
+public class InfluenceScoreCalculator
+{
+    // BFS for shortest path calculation in unweighted graphs
+    public static int BFSShortestPath(Dictionary<string, List<string>> graph, string start, string end)
     {
-        var queue = new Queue<(Node, int)>();
-        var visited = new HashSet<Node>();
+        var queue = new Queue<string>();
+        var visited = new HashSet<string>();
+        var distance = new Dictionary<string, int>();
 
-        queue.Enqueue((start, 0));
+        queue.Enqueue(start);
         visited.Add(start);
+        distance[start] = 0;
 
         while (queue.Count > 0)
         {
-            var (currentNode, distance) = queue.Dequeue();
+            string node = queue.Dequeue();
 
-            if (currentNode == target)
-                return distance;
-
-            foreach (var (neighbor, _) in graph.GetNeighbors(currentNode))
+            foreach (var neighbor in graph[node])
             {
                 if (!visited.Contains(neighbor))
                 {
                     visited.Add(neighbor);
-                    queue.Enqueue((neighbor, distance + 1));
+                    queue.Enqueue(neighbor);
+                    distance[neighbor] = distance[node] + 1;
+
+                    if (neighbor == end)
+                        return distance[neighbor];
                 }
             }
         }
-
-        return int.MaxValue; // No path found
+        return int.MaxValue; // No path exists
     }
 
-    // Weighted Graph using Dijkstra's Algorithm
-    public static double CalculateInfluenceScoreWeighted(Graph graph, Node source)
+    // Dijkstra's Algorithm for shortest path in weighted graphs using a custom priority queue
+    public static int DijkstraShortestPath(Dictionary<string, List<(string, int)>> graph, string start, string end)
     {
-        double totalDistance = 0;
-        int nodeCount = graph.GetNodes().Count;
+        var distances = new Dictionary<string, int>();
+        var priorityQueue = new PriorityQueue<string>();
+        var visited = new HashSet<string>();
 
-        foreach (var node in graph.GetNodes())
-        {
-            if (node != source)
-            {
-                int distance = Dijkstra(graph, source, node);
-                totalDistance += distance;
-            }
-        }
+        foreach (var node in graph.Keys)
+            distances[node] = int.MaxValue;
 
-        return (nodeCount - 1) / totalDistance;
-    }
-
-    private static int Dijkstra(Graph graph, Node start, Node target)
-    {
-        var distanceMap = new Dictionary<Node, int>();
-        var priorityQueue = new SortedSet<(int, Node)>();
-
-        foreach (var node in graph.GetNodes())
-        {
-            distanceMap[node] = int.MaxValue;
-        }
-
-        distanceMap[start] = 0;
-        priorityQueue.Add((0, start));
+        distances[start] = 0;
+        priorityQueue.Enqueue(start, 0);
 
         while (priorityQueue.Count > 0)
         {
-            var (currentDistance, currentNode) = priorityQueue.Min;
-            priorityQueue.Remove(priorityQueue.Min);
+            priorityQueue.TryDequeue(out string currentNode, out int currentDistance);
 
-            if (currentNode == target)
+            if (visited.Contains(currentNode))
+                continue;
+
+            visited.Add(currentNode);
+
+            if (currentNode == end)
                 return currentDistance;
 
-            foreach (var (neighbor, weight) in graph.GetNeighbors(currentNode))
+            foreach (var (neighbor, weight) in graph[currentNode])
             {
                 int newDistance = currentDistance + weight;
-
-                if (newDistance < distanceMap[neighbor])
+                if (newDistance < distances[neighbor])
                 {
-                    priorityQueue.Remove((distanceMap[neighbor], neighbor));
-                    distanceMap[neighbor] = newDistance;
-                    priorityQueue.Add((newDistance, neighbor));
+                    distances[neighbor] = newDistance;
+                    priorityQueue.Enqueue(neighbor, newDistance);
                 }
             }
         }
 
         return int.MaxValue; // No path found
     }
-}
 
-public class Program
-{
+    // Influence Score Calculation for Unweighted Graphs
+    public static double CalculateInfluenceScoreUnweighted(Dictionary<string, List<string>> graph, string node)
+    {
+        int n = graph.Count;
+        int sumOfDistances = 0;
+
+        foreach (var otherNode in graph.Keys)
+        {
+            if (otherNode != node)
+            {
+                int distance = BFSShortestPath(graph, node, otherNode);
+                if (distance != int.MaxValue)
+                    sumOfDistances += distance;
+            }
+        }
+
+        return sumOfDistances == 0 ? 0 : (n - 1) / (double)sumOfDistances;
+    }
+
+    // Influence Score Calculation for Weighted Graphs
+    public static double CalculateInfluenceScoreWeighted(Dictionary<string, List<(string, int)>> graph, string node)
+    {
+        int n = graph.Count;
+        int sumOfDistances = 0;
+
+        foreach (var otherNode in graph.Keys)
+        {
+            if (otherNode != node)
+            {
+                int distance = DijkstraShortestPath(graph, node, otherNode);
+                if (distance != int.MaxValue)
+                    sumOfDistances += distance;
+            }
+        }
+
+        return sumOfDistances == 0 ? 0 : (n - 1) / (double)sumOfDistances;
+    }
+
+    // Sample Unweighted Graph
+    public static Dictionary<string, List<string>> GetUnweightedGraph()
+    {
+        return new Dictionary<string, List<string>>()
+        {
+            {"Alicia", new List<string> {"Britney"}},
+            {"Britney", new List<string> {"Alicia", "Claire"}},
+            {"Claire", new List<string> {"Britney", "Diana"}},
+            {"Diana", new List<string> {"Claire", "Edward", "Harry"}},
+            {"Edward", new List<string> {"Diana", "Harry", "Gloria"}},
+            {"Harry", new List<string> {"Diana", "Edward", "Gloria"}},
+            {"Gloria", new List<string> {"Edward", "Harry", "Fred"}},
+            {"Fred", new List<string> {"Gloria"}}
+        };
+    }
+
+    // Sample Weighted Graph
+    public static Dictionary<string, List<(string, int)>> GetWeightedGraph()
+    {
+        return new Dictionary<string, List<(string, int)>>()
+        {
+            {"A", new List<(string, int)> {("B", 1), ("C", 1), ("E", 5)}},
+            {"B", new List<(string, int)> {("C", 4), ("E", 1), ("G", 1)}},
+            {"C", new List<(string, int)> {("D", 3), ("E", 3)}},
+            {"D", new List<(string, int)> {("F", 5)}},
+            {"E", new List<(string, int)> {("F", 2), ("G", 2)}},
+            {"G", new List<(string, int)> {("H", 3)}},
+            {"H", new List<(string, int)> {("I", 3)}},
+            {"I", new List<(string, int)> {("J", 3)}}
+        };
+    }
+
+    // Main method with options for both unweighted and weighted influence score calculation
     public static void Main()
     {
-        var graph = new Graph();
-        var nodeA = new Node(1);
-        var nodeB = new Node(2);
-        var nodeC = new Node(3);
+        Console.WriteLine("Choose the type of graph:");
+        Console.WriteLine("1. Unweighted Graph");
+        Console.WriteLine("2. Weighted Graph");
+        Console.Write("Enter your choice: ");
 
-        graph.AddNode(nodeA);
-        graph.AddNode(nodeB);
-        graph.AddNode(nodeC);
+        int choice;
+        if (!int.TryParse(Console.ReadLine(), out choice) || (choice != 1 && choice != 2))
+        {
+            Console.WriteLine("Invalid input. Please enter 1 or 2.");
+            return;
+        }
 
-        graph.AddEdge(nodeA, nodeB, 1);
-        graph.AddEdge(nodeB, nodeC, 2);
-        graph.AddEdge(nodeA, nodeC, 3);
-
-        Console.WriteLine("Influence Score (Unweighted): " +
-            InfluenceCalculator.CalculateInfluenceScoreUnweighted(graph, nodeA));
-
-        Console.WriteLine("Influence Score (Weighted): " +
-            InfluenceCalculator.CalculateInfluenceScoreWeighted(graph, nodeA));
+        if (choice == 1)
+        {
+            var graph = GetUnweightedGraph();
+            Console.Write("Enter the node for influence score calculation: ");
+            string node = Console.ReadLine();
+            double score = CalculateInfluenceScoreUnweighted(graph, node);
+            Console.WriteLine($"Influence score for {node}: {score}");
+        }
+        else if (choice == 2)
+        {
+            var graph = GetWeightedGraph();
+            Console.Write("Enter the node for influence score calculation: ");
+            string node = Console.ReadLine();
+            double score = CalculateInfluenceScoreWeighted(graph, node);
+            Console.WriteLine($"Influence score for {node}: {score}");
+        }
     }
 }
+
+
+
+
